@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel de Gerenciamento de Riscos · Construção Civil</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = { theme: { extend: { fontFamily: {
+    display: ['"Barlow Condensed"', 'sans-serif'],
+    sans: ['Inter', 'sans-serif'],
+    mono: ['"IBM Plex Mono"', 'monospace'],
+  } } } }
+</script>
+<style>
+  body { background-color: #eceef1; background-image:
+      linear-gradient(#0f172a08 1px, transparent 1px),
+      linear-gradient(90deg, #0f172a08 1px, transparent 1px);
+    background-size: 26px 26px; }
+  .cell-risk { transition: transform .12s ease, box-shadow .12s ease; }
+  .cell-risk:hover { transform: translateY(-2px) scale(1.06); box-shadow: 0 6px 14px #0f172a3d; z-index: 5; }
+  .risk-active { outline: 3px solid #0f172a; outline-offset: 2px; }
+  tr.row-active { background: #0f172a !important; }
+  tr.row-active td { color: #f8fafc !important; }
+  ::-webkit-scrollbar { height: 9px; width: 9px; }
+  ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 9px; }
+  /* Drag & drop das bolinhas */
+  .risk-chip { touch-action: none; cursor: grab; }
+  .risk-chip:active { cursor: grabbing; }
+  body.dragging { cursor: grabbing; user-select: none; }
+  body.dragging .risk-chip { pointer-events: none; }
+  .cell-hover { outline: 3px dashed #0f172a; outline-offset: -3px; }
+  .drag-ghost {
+    position: fixed; z-index: 60; transform: translate(-50%, -50%);
+    height: 40px; width: 40px; border-radius: 9999px;
+    background: #fff; color: #0f172a; font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 20px #0f172a55, 0 0 0 3px var(--ring, #0f172a);
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body class="font-sans text-slate-800 antialiased">
+
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+
+  <!-- HEADER -->
+  <header class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 border-b-4 border-slate-900 pb-5">
+    <div>
+      <div class="flex items-center gap-2 text-xs font-mono font-semibold uppercase tracking-widest text-red-600">
+        <span class="inline-block h-3 w-3 bg-red-500" style="clip-path:polygon(50% 0,100% 100%,0 100%)"></span>
+        Engenharia · Segurança · Cronograma
+      </div>
+      <h1 class="font-display font-700 text-4xl sm:text-5xl uppercase leading-none tracking-tight text-slate-900 mt-1">
+        Gerenciamento de Riscos
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">Obra de Construção Civil — matriz de exposição e registro de tratamento (Anexos 1, 2 e 3)</p>
+    </div>
+    <div class="font-mono text-xs text-slate-600 sm:text-right space-y-0.5 shrink-0">
+      <div>PROJETO&nbsp;·&nbsp;<span class="font-semibold text-slate-900">EDIFÍCIO NORTE</span></div>
+      <div>IMPACTOS&nbsp;·&nbsp;CUSTO / TEMPO / ESCOPO / QUALIDADE</div>
+      <div>REVISÃO&nbsp;·&nbsp;R03 / 2026</div>
+    </div>
+  </header>
+
+  <!-- SUMMARY STRIP -->
+  <section id="summary" class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6"></section>
+
+  <!-- MATRIX + PANEL -->
+  <section class="grid grid-cols-1 lg:grid-cols-5 gap-5 mt-6">
+
+    <!-- Heat map -->
+    <div class="lg:col-span-3 bg-white border border-slate-200 rounded-xl p-4 sm:p-6 shadow-sm">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="font-display font-600 text-2xl uppercase tracking-wide text-slate-900">Matriz de Riscos 5×5</h2>
+        <button id="resetBtn" class="font-mono text-[11px] uppercase tracking-wide text-slate-500 hover:text-slate-900
+                     border border-slate-300 hover:border-slate-900 rounded px-2.5 py-1 transition-colors">
+          &#8635; Restaurar
+        </button>
+      </div>
+      <p class="text-[11px] text-slate-400 mb-4">Arraste as bolinhas <span class="font-mono">R1–R6</span> para reposicioná-las — o nível se recalcula automaticamente.</p>
+
+      <div class="flex gap-3">
+        <div class="flex items-center">
+          <span class="font-display font-600 uppercase tracking-widest text-slate-500 text-sm"
+                style="writing-mode:vertical-rl; transform:rotate(180deg);">Probabilidade &rarr;</span>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div id="matrix" class="grid gap-1.5" style="grid-template-columns: 88px repeat(5, minmax(0,1fr));"></div>
+          <div class="mt-2 pl-[88px]">
+            <div class="text-center font-display font-600 uppercase tracking-widest text-slate-500 text-sm">Impacto &rarr;</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="legend" class="flex flex-wrap gap-x-5 gap-y-2 mt-5 pt-4 border-t border-slate-100 text-xs font-medium"></div>
+      <p class="text-[11px] text-slate-400 mt-2">Passe o mouse sobre os eixos para ver os critérios de probabilidade e impacto (Anexo 3).</p>
+    </div>
+
+    <!-- Detail panel -->
+    <aside class="lg:col-span-2 bg-slate-900 text-slate-100 rounded-xl p-5 sm:p-6 shadow-sm flex flex-col">
+      <h2 class="font-display font-600 text-2xl uppercase tracking-wide text-white">Detalhe do Risco</h2>
+      <div id="detail" class="mt-4 flex-1"></div>
+    </aside>
+  </section>
+
+  <!-- ATITUDE FRENTE AOS RISCOS (Anexo 2) -->
+  <section class="mt-6 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+    <div class="px-4 sm:px-6 py-4 border-b border-slate-200">
+      <h2 class="font-display font-600 text-2xl uppercase tracking-wide text-slate-900">Atitude frente aos Riscos</h2>
+      <p class="text-xs text-slate-400 font-mono uppercase mt-0.5">Anexo 2 — política de tratamento por nível</p>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm border-collapse min-w-[720px]">
+        <thead>
+          <tr class="bg-slate-100 text-left font-display uppercase tracking-wide text-slate-600 text-xs">
+            <th class="px-3 py-3 w-28">Nível</th>
+            <th class="px-3 py-3">Apetite / Tolerância</th>
+            <th class="px-3 py-3">Ação requerida</th>
+            <th class="px-3 py-3">Monitoramento e reporte</th>
+            <th class="px-3 py-3">Ação em caso de agravamento</th>
+          </tr>
+        </thead>
+        <tbody id="attitudeBody" class="divide-y divide-slate-100 align-top"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- RISK REGISTER TABLE (Anexo 1) -->
+  <section class="mt-6 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+    <div class="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 class="font-display font-600 text-2xl uppercase tracking-wide text-slate-900">Identificação dos Riscos</h2>
+        <p class="text-xs text-slate-400 font-mono uppercase mt-0.5">Anexo 1 — os 6 riscos · clique numa linha para destacar</p>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm border-collapse min-w-[900px]">
+        <thead>
+          <tr class="bg-slate-100 text-left font-display uppercase tracking-wide text-slate-600 text-xs">
+            <th class="px-3 py-3 w-12">ID</th>
+            <th class="px-3 py-3">Evento de Risco</th>
+            <th class="px-3 py-3">Fonte (Causa)</th>
+            <th class="px-3 py-3 text-center">Inerente</th>
+            <th class="px-3 py-3">Plano de Mitigação <span class="text-slate-300 normal-case">(proposto)</span></th>
+            <th class="px-3 py-3 text-center">Residual <span class="text-slate-300 normal-case">(prop.)</span></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody" class="divide-y divide-slate-100 align-top"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- REGISTRO DE RISCOS SIMPLIFICADO (Anexo 4) -->
+  <section class="mt-6 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+    <div class="px-4 sm:px-6 py-4 border-b border-slate-200">
+      <h2 class="font-display font-600 text-2xl uppercase tracking-wide text-slate-900">Registro de Riscos Simplificado</h2>
+      <p class="text-xs text-slate-400 font-mono uppercase mt-0.5">Anexo 4 — apenas os 3 riscos de maior severidade do mapa (atualiza ao arrastar)</p>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm border border-slate-200 border-collapse min-w-[1000px]">
+        <thead class="font-display uppercase tracking-wide text-slate-600 text-xs">
+          <tr class="bg-slate-100">
+            <th class="border border-slate-200 px-3 py-2 align-bottom" rowspan="2">Risco</th>
+            <th class="border border-slate-200 px-3 py-2 align-bottom" rowspan="2">Nome</th>
+            <th class="border border-slate-200 px-3 py-2 align-bottom" rowspan="2">Descrição</th>
+            <th class="border border-slate-200 px-3 py-2 text-center" colspan="2">Nível</th>
+            <th class="border border-slate-200 px-3 py-2 text-center" colspan="2">Controle</th>
+            <th class="border border-slate-200 px-3 py-2 text-center" colspan="2">Tratamento</th>
+          </tr>
+          <tr class="bg-slate-100">
+            <th class="border border-slate-200 px-3 py-2 text-center">Inerente</th>
+            <th class="border border-slate-200 px-3 py-2 text-center">Residual</th>
+            <th class="border border-slate-200 px-3 py-2">Descrição</th>
+            <th class="border border-slate-200 px-3 py-2 text-center">Efetividade</th>
+            <th class="border border-slate-200 px-3 py-2">Descrição</th>
+            <th class="border border-slate-200 px-3 py-2">Prazo</th>
+          </tr>
+        </thead>
+        <tbody id="anexo4Body" class="align-top"></tbody>
+        <tfoot class="text-slate-700">
+          <tr>
+            <td class="border border-slate-200 px-3 py-2 font-display font-600 uppercase text-xs bg-slate-50">Observações</td>
+            <td class="border border-slate-200 px-3 py-2" colspan="8">Selecionados automaticamente por severidade (nível inerente). Controles e prazos são propostos e devem ser validados pela equipe da obra.</td>
+          </tr>
+          <tr>
+            <td class="border border-slate-200 px-3 py-2 font-display font-600 uppercase text-xs bg-slate-50">Responsável</td>
+            <td class="border border-slate-200 px-3 py-2" colspan="3">Engenheiro Responsável pela Obra</td>
+            <td class="border border-slate-200 px-3 py-2 font-display font-600 uppercase text-xs bg-slate-50 text-center">Data</td>
+            <td class="border border-slate-200 px-3 py-2" colspan="4"><span id="anexo4Data"></span></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+
+  <p class="text-center font-mono text-[11px] text-slate-400 mt-6 leading-relaxed">
+    Cores e zonas conforme Anexo 2 (Azul · Verde · Amarelo · Vermelho) e Anexo 3.<br>
+    Planos de mitigação e riscos residuais são propostos — não constam nos anexos e devem ser validados pela equipe.
+  </p>
+</div>
+
+<script>
+/* ================= Modelo (Anexos 2 e 3) ================= */
+const LEVELS = {
+  baixo:   { label:'Baixo',   fill:'#33B4E5', soft:'#dbeffb', line:'#1183b8', ink:'#0b3a52',
+             atitude:{ apetite:'Aceitáveis', acao:'Nenhuma ação requerida', monit:'Mensal', agrav:'Gestão pelo encarregado' } },
+  medio:   { label:'Médio',   fill:'#2FA84F', soft:'#d6f0dd', line:'#1f7d3a', ink:'#0f3d1e',
+             atitude:{ apetite:'Aceitáveis com controles existentes', acao:'Propor tratamento para aprovação', monit:'Quinzenal', agrav:'Gestão pelo mestre de obra' } },
+  alto:    { label:'Alto',    fill:'#FBD514', soft:'#fdf3bf', line:'#c9a400', ink:'#6b5200',
+             atitude:{ apetite:'Aceitáveis com controles efetivos', acao:'Implementar tratamento e reportar ao patrocinador', monit:'Semanal', agrav:'Gestão pelo engenheiro' } },
+  extremo: { label:'Extremo', fill:'#E8362F', soft:'#fbd7d5', line:'#b71c16', ink:'#611010',
+             atitude:{ apetite:'Não aceitáveis', acao:'Implementar tratamento', monit:'Contínuo', agrav:'Gestão pelo patrocinador / proprietário' } },
+};
+
+/* Mapa de zonas fixo (Anexo 3) — ZONE[prob][imp-1]; prob/imp 1..5 */
+const ZONE = {
+  5: ['medio','medio','alto','extremo','extremo'],   // Muito Alta
+  4: ['baixo','medio','alto','alto','extremo'],       // Alta
+  3: ['baixo','medio','medio','alto','alto'],         // Média
+  2: ['baixo','baixo','medio','medio','alto'],        // Baixa
+  1: ['baixo','baixo','baixo','medio','alto'],        // Muito Baixa
+};
+const levelAt = (prob, imp) => ZONE[prob][imp - 1];
+
+const PROB_LABEL = { 1:'Muito Baixa', 2:'Baixa', 3:'Média', 4:'Alta', 5:'Muito Alta' };
+const IMP_LABEL  = { 1:'Muito Baixo', 2:'Baixo', 3:'Médio', 4:'Alto', 5:'Muito Alto' };
+
+const PROB_DESC = {
+  5:'Diversas ocorrências esperadas em condições normais',
+  4:'Algumas ocorrências esperadas em condições normais',
+  3:'Raras ocorrências esperadas em condições normais',
+  2:'Algumas ocorrências esperadas em condições excepcionais',
+  1:'Raras ocorrências esperadas em condições excepcionais',
+};
+const IMP_CRIT = {
+  1:{ c:'Custo < 5%', t:'Tempo < 1%', e:'Redução insignificante de escopo', q:'Degradação de qualidade insignificante' },
+  2:{ c:'Custo 5–10%', t:'Tempo 1–5%', e:'Afeta áreas não prioritárias', q:'Pequenas aplicações afetadas' },
+  3:{ c:'Custo 10–20%', t:'Tempo 5–10%', e:'Afeta áreas prioritárias', q:'Grandes aplicações afetadas' },
+  4:{ c:'Custo 20–40%', t:'Tempo 10–20%', e:'Redução requer aprovação do patrocinador', q:'Redução requer aprovação do patrocinador' },
+  5:{ c:'Custo > 40%', t:'Tempo > 20%', e:'Resultado do projeto sem utilidade', q:'Resultado do projeto sem utilidade' },
+};
+
+/* ================= Riscos (Anexo 1) ================= */
+const RISKS = [
+  { id:'R1', prob:3, imp:3, residual:'baixo',
+    evento:'Atraso na entrega de materiais e equipamentos',
+    nome:'Atraso na entrega de materiais',
+    fonte:['Falha na seleção dos fornecedores','Contratos mal elaborados'],
+    consequencia:'Paralisação de frentes de serviço e deslize no cronograma (Tempo), com custo adicional de reprogramação (Custo).',
+    controle:'Cronograma de compras vinculado ao avanço físico da obra.', efetividade:'Média',
+    mitigacao:'Homologar e qualificar fornecedores, incluir cláusulas de prazo e multa em contrato e manter estoque de segurança de itens críticos.',
+    prazo:'Antes de cada etapa crítica', responsavel:'Suprimentos / Comprador' },
+  { id:'R2', prob:3, imp:4, residual:'medio',
+    evento:'Desconhecimento do escopo',
+    nome:'Desconhecimento do escopo',
+    fonte:['Projeto mal elaborado','Falha de comunicação com as partes envolvidas'],
+    consequencia:'Mudanças e retrabalho não previstos, afetando Escopo, Custo e Tempo da obra.',
+    controle:'Projeto executivo e memorial descritivo aprovados.', efetividade:'Baixa',
+    mitigacao:'Detalhar e validar o escopo com as partes, formalizar matriz de responsabilidades e registrar reuniões de alinhamento.',
+    prazo:'Fase de planejamento (antes da execução)', responsavel:'Engenheiro / Gerente do projeto' },
+  { id:'R3', prob:4, imp:4, residual:'medio',
+    evento:'Fornecimento de materiais e equipamentos de baixa qualidade',
+    nome:'Materiais de baixa qualidade',
+    fonte:['Falha na seleção dos fornecedores','Contratos mal elaborados','Controles de recebimento de materiais ineficientes'],
+    consequencia:'Perda de qualidade e retrabalho, com risco à durabilidade da edificação (Qualidade e Custo).',
+    controle:'Conferência visual no recebimento.', efetividade:'Baixa',
+    mitigacao:'Definir critérios técnicos de seleção, inspecionar e ensaiar no recebimento e documentar o controle de qualidade.',
+    prazo:'A cada recebimento de material', responsavel:'Engenheiro / Controle de qualidade' },
+  { id:'R4', prob:5, imp:2, residual:'baixo',
+    evento:'Interrupção da obra por condições atmosféricas adversas',
+    nome:'Interrupção por clima',
+    fonte:['Planejamento de obra sem considerar condições atmosféricas','Falta de plano de trabalho alternativo para evitar interrupções'],
+    consequencia:'Interrupção de serviços externos e atraso pontual no cronograma (Tempo).',
+    controle:'Acompanhamento da previsão do tempo.', efetividade:'Média',
+    mitigacao:'Cronograma com folgas sazonais, plano de trabalho alternativo e priorização de serviços internos em períodos críticos.',
+    prazo:'Contínuo (estação chuvosa)', responsavel:'Mestre de obra' },
+  { id:'R5', prob:4, imp:4, residual:'medio',
+    evento:'Erros na execução',
+    nome:'Erros na execução',
+    fonte:['Falta de qualificação da mão de obra','Comunicação deficiente na obra','Falta de monitoramento das atividades por pessoa qualificada'],
+    consequencia:'Retrabalho, custo extra e risco de patologias construtivas (Qualidade, Custo e Tempo).',
+    controle:'Conferência do encarregado por etapa.', efetividade:'Média',
+    mitigacao:'Qualificar e treinar a mão de obra, garantir supervisão técnica qualificada e inspeções por etapa (DDS e checklists).',
+    prazo:'Contínuo durante a execução', responsavel:'Engenheiro / Mestre de obra' },
+  { id:'R6', prob:4, imp:5, residual:'alto',
+    evento:'Orçamento mal elaborado',
+    nome:'Orçamento mal elaborado',
+    fonte:['Falta de profissional qualificado na elaboração do orçamento','Falta de visão sistêmica do canteiro de obras'],
+    consequencia:'Estouro de custo e risco de inviabilização financeira da obra (Custo e Escopo).',
+    controle:'Orçamento base da proposta.', efetividade:'Baixa',
+    mitigacao:'Contar com orçamentista qualificado, revisão independente do orçamento e reserva de contingência com visão sistêmica de custos.',
+    prazo:'Antes do início da obra', responsavel:'Patrocinador / Orçamentista' },
+];
+RISKS.forEach(r => { r.inherent = levelAt(r.prob, r.imp); });
+
+/* Severidade para ordenar (nível + posição como desempate) */
+const RANK = { baixo:1, medio:2, alto:3, extremo:4 };
+const severity = r => RANK[r.inherent] * 100 + (r.prob + r.imp);
+
+const byId = id => RISKS.find(r => r.id === id);
+let active = null;
+
+/* ================= Componentes ================= */
+function chip(r, big){
+  const size = big ? 'h-8 w-8 text-[13px]' : 'h-6 w-6 text-[11px]';
+  return `<button data-chip="${r.id}"
+      class="cell-risk risk-chip ${size} rounded-full bg-white text-slate-900 font-mono font-600
+             flex items-center justify-center shadow ring-2"
+      style="--tw-ring-color:${LEVELS[r.inherent].line}" title="${r.id} · ${r.evento}">${r.id}</button>`;
+}
+
+function badge(levelKey){
+  const l = LEVELS[levelKey];
+  return `<span class="inline-block font-display font-600 uppercase tracking-wide text-xs px-2.5 py-0.5 rounded-full"
+            style="background:${l.soft};color:${l.ink};border:1px solid ${l.line}">${l.label}</span>`;
+}
+
+function buildMatrix(){
+  const m = document.getElementById('matrix');
+  let html = '';
+  for (let prob = 5; prob >= 1; prob--){
+    html += `<div class="flex flex-col items-end justify-center pr-1 text-right cursor-help"
+                  title="${PROB_LABEL[prob]} — ${PROB_DESC[prob]}">
+               <span class="font-display font-600 text-[13px] leading-none text-slate-700">${PROB_LABEL[prob]}</span>
+             </div>`;
+    for (let imp = 1; imp <= 5; imp++){
+      const lv = LEVELS[levelAt(prob, imp)];
+      const here = RISKS.filter(r => r.prob === prob && r.imp === imp);
+      html += `<div class="cell relative rounded-md aspect-square flex flex-wrap items-center justify-center gap-1 p-1"
+                    data-cell data-prob="${prob}" data-imp="${imp}" style="background:${lv.fill}">
+                 <span class="absolute bottom-1 left-0 right-0 text-center font-display font-600 uppercase text-[10px] leading-none"
+                       style="color:${lv.ink};opacity:${here.length?0:.7}">${lv.label}</span>
+                 ${here.map(r => chip(r, here.length===1)).join('')}
+               </div>`;
+    }
+  }
+  html += `<div></div>` + [1,2,3,4,5].map(imp => {
+    const k = IMP_CRIT[imp];
+    return `<div class="text-center pt-1 cursor-help"
+                 title="${IMP_LABEL[imp]}&#10;${k.c}&#10;${k.t}&#10;${k.e}&#10;${k.q}">
+              <span class="font-display font-600 text-[13px] text-slate-700 leading-none">${IMP_LABEL[imp]}</span>
+            </div>`;
+  }).join('');
+  m.innerHTML = html;
+}
+
+function buildLegend(){
+  document.getElementById('legend').innerHTML = ['baixo','medio','alto','extremo'].map(k => {
+    const l = LEVELS[k];
+    return `<span class="flex items-center gap-2">
+       <span class="h-3.5 w-3.5 rounded-sm" style="background:${l.fill};border:1px solid ${l.line}"></span>
+       <span class="text-slate-600">${l.label}</span></span>`;
+  }).join('');
+}
+
+function buildSummary(){
+  document.getElementById('summary').innerHTML = ['extremo','alto','medio','baixo'].map(k => {
+    const l = LEVELS[k];
+    const n = RISKS.filter(r => r.inherent === k).length;
+    return `<div class="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm flex items-center gap-3">
+      <span class="h-10 w-1.5 rounded-full" style="background:${l.line}"></span>
+      <div>
+        <div class="font-display font-700 text-3xl leading-none" style="color:${l.line}">${n}</div>
+        <div class="font-display uppercase tracking-wide text-xs text-slate-500 mt-0.5">${l.label}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function buildAttitude(){
+  document.getElementById('attitudeBody').innerHTML = ['baixo','medio','alto','extremo'].map(k => {
+    const l = LEVELS[k], a = l.atitude;
+    return `<tr class="hover:bg-slate-50">
+      <td class="px-3 py-3"><span class="inline-block font-display font-600 uppercase tracking-wide text-xs px-3 py-1 rounded"
+            style="background:${l.fill};color:${k==='alto'?l.ink:'#fff'}">${l.label}</span></td>
+      <td class="px-3 py-3 text-slate-700">${a.apetite}</td>
+      <td class="px-3 py-3 text-slate-700">${a.acao}</td>
+      <td class="px-3 py-3 text-slate-700">${a.monit}</td>
+      <td class="px-3 py-3 text-slate-700">${a.agrav}</td>
+    </tr>`;
+  }).join('');
+}
+
+function buildTable(){
+  document.getElementById('tableBody').innerHTML = RISKS.map(r => `
+    <tr data-row="${r.id}" class="hover:bg-slate-50 cursor-pointer transition-colors">
+      <td class="px-3 py-3 font-mono font-600 text-slate-900">${r.id}</td>
+      <td class="px-3 py-3 font-medium text-slate-900 min-w-[180px]">${r.evento}</td>
+      <td class="px-3 py-3 text-slate-600 min-w-[210px]">${r.fonte.map(f=>'• '+f).join('<br>')}</td>
+      <td class="px-3 py-3 text-center whitespace-nowrap">${badge(r.inherent)}</td>
+      <td class="px-3 py-3 text-slate-600 min-w-[230px]">${r.mitigacao}</td>
+      <td class="px-3 py-3 text-center whitespace-nowrap">${badge(r.residual)}</td>
+    </tr>`).join('');
+}
+
+function efBadge(ef){
+  const map = { 'Alta':'#1f7d3a', 'Média':'#c9a400', 'Baixa':'#b71c16' };
+  const c = map[ef] || '#64748b';
+  return `<span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" style="background:${c}"></span>${ef}</span>`;
+}
+
+function buildAnexo4(){
+  const top3 = [...RISKS].sort((a,b) => severity(b) - severity(a)).slice(0, 3);
+  document.getElementById('anexo4Body').innerHTML = top3.map((r, i) => `
+    <tr class="hover:bg-slate-50">
+      <td class="border border-slate-200 px-3 py-3 font-mono font-600 text-slate-900 whitespace-nowrap">1.${i+1} <span class="text-slate-400">(${r.id})</span></td>
+      <td class="border border-slate-200 px-3 py-3 font-medium text-slate-900 min-w-[130px]">${r.nome}</td>
+      <td class="border border-slate-200 px-3 py-3 text-slate-600 min-w-[190px]">${r.consequencia}</td>
+      <td class="border border-slate-200 px-3 py-3 text-center whitespace-nowrap">${badge(r.inherent)}</td>
+      <td class="border border-slate-200 px-3 py-3 text-center whitespace-nowrap">${badge(r.residual)}</td>
+      <td class="border border-slate-200 px-3 py-3 text-slate-600 min-w-[150px]">${r.controle}</td>
+      <td class="border border-slate-200 px-3 py-3 whitespace-nowrap">${efBadge(r.efetividade)}</td>
+      <td class="border border-slate-200 px-3 py-3 text-slate-600 min-w-[220px]">${r.mitigacao}</td>
+      <td class="border border-slate-200 px-3 py-3 text-slate-600 min-w-[120px]">${r.prazo}<br><span class="text-slate-400 text-xs">Resp.: ${r.responsavel}</span></td>
+    </tr>`).join('');
+  document.getElementById('anexo4Data').textContent = new Date().toLocaleDateString('pt-BR');
+}
+
+function renderDetail(){
+  const el = document.getElementById('detail');
+  if (!active){
+    el.innerHTML = `<div class="h-full flex flex-col items-center justify-center text-center text-slate-400 py-10">
+        <svg viewBox="0 0 24 24" class="h-10 w-10 mb-3" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+        <p class="text-sm max-w-[15rem]">Selecione um risco na matriz ou na tabela para ver a fonte, o tratamento e a atitude aplicável (Anexo 2).</p>
+      </div>`;
+    return;
+  }
+  const r = active, li = LEVELS[r.inherent], at = li.atitude;
+  el.innerHTML = `
+    <div class="flex items-center gap-3">
+      <span class="font-mono font-700 text-2xl text-white">${r.id}</span>
+      <span class="h-2 w-2 rounded-full" style="background:${li.line}"></span>
+      <span class="font-mono text-xs text-slate-400">Prob. ${PROB_LABEL[r.prob]} · Imp. ${IMP_LABEL[r.imp]}</span>
+    </div>
+    <h3 class="font-display font-600 text-xl text-white leading-tight mt-2">${r.evento}</h3>
+
+    <div class="grid grid-cols-2 gap-2 mt-4">
+      <div class="bg-slate-800 rounded-lg p-3">
+        <div class="font-mono text-[10px] uppercase tracking-wide text-slate-400">Inerente</div>
+        <div class="mt-1">${badge(r.inherent)}</div>
+      </div>
+      <div class="bg-slate-800 rounded-lg p-3">
+        <div class="font-mono text-[10px] uppercase tracking-wide text-slate-400">Residual (prop.)</div>
+        <div class="mt-1">${badge(r.residual)}</div>
+      </div>
+    </div>
+
+    <dl class="mt-4 space-y-3 text-sm">
+      <div><dt class="font-display font-600 uppercase tracking-wide text-xs text-sky-400">Fonte (Causa)</dt>
+        <dd class="text-slate-300 mt-0.5">${r.fonte.map(f=>'• '+f).join('<br>')}</dd></div>
+      <div><dt class="font-display font-600 uppercase tracking-wide text-xs text-sky-400">Plano de Mitigação (proposto)</dt>
+        <dd class="text-slate-300 mt-0.5">${r.mitigacao}</dd></div>
+    </dl>
+
+    <div class="mt-4 pt-4 border-t border-slate-700">
+      <div class="font-display font-600 uppercase tracking-wide text-xs text-sky-400 mb-2">Atitude aplicável · Anexo 2</div>
+      <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+        <div><span class="text-slate-500">Apetite</span><br><span class="text-slate-200">${at.apetite}</span></div>
+        <div><span class="text-slate-500">Ação requerida</span><br><span class="text-slate-200">${at.acao}</span></div>
+        <div><span class="text-slate-500">Monitoramento</span><br><span class="text-slate-200">${at.monit}</span></div>
+        <div><span class="text-slate-500">Se agravar</span><br><span class="text-slate-200">${at.agrav}</span></div>
+      </div>
+    </div>`;
+}
+
+function select(id){
+  active = (active && active.id === id) ? null : byId(id);
+  document.querySelectorAll('[data-chip]').forEach(c =>
+    c.classList.toggle('risk-active', active && c.dataset.chip === active.id));
+  document.querySelectorAll('[data-row]').forEach(row =>
+    row.classList.toggle('row-active', active && row.dataset.row === active.id));
+  renderDetail();
+}
+
+/* ================= Re-render ================= */
+function applyActive(){
+  document.querySelectorAll('[data-chip]').forEach(c =>
+    c.classList.toggle('risk-active', active && c.dataset.chip === active.id));
+  document.querySelectorAll('[data-row]').forEach(row =>
+    row.classList.toggle('row-active', active && row.dataset.row === active.id));
+}
+function rerenderAll(){
+  buildSummary(); buildMatrix(); buildTable(); buildAnexo4(); renderDetail(); applyActive();
+}
+
+/* ================= Arrastar bolinhas ================= */
+const ORIGINAL = RISKS.map(r => ({ id:r.id, prob:r.prob, imp:r.imp }));
+let drag = null;
+
+function pointerDown(e){
+  const chipEl = e.target.closest('[data-chip]');
+  if (!chipEl || (e.button !== undefined && e.button !== 0)) return;
+  drag = { id: chipEl.dataset.chip, x0:e.clientX, y0:e.clientY, moved:false, ghost:null, lastCell:null };
+  window.addEventListener('pointermove', pointerMove);
+  window.addEventListener('pointerup', pointerUp, { once:true });
+  window.addEventListener('pointercancel', pointerUp, { once:true });
+}
+function startGhost(e){
+  document.body.classList.add('dragging');
+  const g = document.createElement('div');
+  g.className = 'drag-ghost';
+  g.textContent = drag.id;
+  g.style.setProperty('--ring', LEVELS[byId(drag.id).inherent].line);
+  document.body.appendChild(g);
+  drag.ghost = g;
+  moveGhost(e);
+}
+function moveGhost(e){
+  if (!drag.ghost) return;
+  drag.ghost.style.left = e.clientX + 'px';
+  drag.ghost.style.top  = e.clientY + 'px';
+}
+function highlightCell(e){
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const cell = el ? el.closest('[data-cell]') : null;
+  if (drag.lastCell && drag.lastCell !== cell) drag.lastCell.classList.remove('cell-hover');
+  if (cell) cell.classList.add('cell-hover');
+  drag.lastCell = cell;
+}
+function pointerMove(e){
+  if (!drag) return;
+  if (!drag.moved){
+    if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6) return;
+    drag.moved = true;
+    startGhost(e);
+  }
+  e.preventDefault();
+  moveGhost(e);
+  highlightCell(e);
+}
+function pointerUp(e){
+  window.removeEventListener('pointermove', pointerMove);
+  if (!drag) return;
+  if (!drag.moved){ select(drag.id); drag = null; return; }   // clique simples = selecionar
+  const target = document.elementFromPoint(e.clientX, e.clientY);
+  const cell = target && target.closest('[data-cell]');
+  if (cell){
+    const r = byId(drag.id);
+    r.prob = +cell.dataset.prob;
+    r.imp  = +cell.dataset.imp;
+    r.inherent = levelAt(r.prob, r.imp);
+  }
+  if (drag.lastCell) drag.lastCell.classList.remove('cell-hover');
+  if (drag.ghost) drag.ghost.remove();
+  document.body.classList.remove('dragging');
+  drag = null;
+  rerenderAll();
+}
+function resetPositions(){
+  RISKS.forEach(r => {
+    const o = ORIGINAL.find(x => x.id === r.id);
+    r.prob = o.prob; r.imp = o.imp; r.inherent = levelAt(r.prob, r.imp);
+  });
+  rerenderAll();
+}
+
+/* ================= Init ================= */
+buildSummary(); buildMatrix(); buildLegend(); buildAttitude(); buildTable(); buildAnexo4(); renderDetail();
+
+document.getElementById('matrix').addEventListener('pointerdown', pointerDown);
+document.getElementById('resetBtn').addEventListener('click', resetPositions);
+document.body.addEventListener('click', e => {          // linhas da tabela = selecionar
+  const rowEl = e.target.closest('[data-row]');
+  if (rowEl) select(rowEl.dataset.row);
+});
+</script>
+</body>
+</html>
